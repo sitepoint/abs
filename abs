@@ -1,0 +1,329 @@
+#!/bin/bash
+#
+# ABS Backup System
+# Copyright (C) 2011 SitePoint Pty Ltd
+#
+# Contact details provided at http://www.sitepoint.com/
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+## Variables
+#
+
+declare -r backupCfg="/usr/local/etc/abs.conf"
+declare -r lockFile="/var/run/backups.pid"
+declare -r scriptName="$(basename ${0})"
+declare -r backupNameDefault="daily"
+declare backupName="${1}"
+
+
+## Functions
+#
+
+function safetyChecks()
+{
+	# Check we're running as root.
+	if [ "${UID}" -ne 0 ]
+	then
+		echo "Error: Must be run as root."
+		exit 1
+	fi
+
+	# Check the config file exists.
+	if [ ! -f "${backupCfg}" ]
+	then
+		echo "Error: Configuration file not found."
+		exit 1
+	fi
+
+	# Check for empty lines in the configuration 
+	# file - we don't like those. :)
+	grep -q '^[[:space:]]*$' "${backupCfg}"
+	if [ "${?}" -eq 0 ]
+	then
+		echo -n "Error: Invalid whitespace in configuration file "
+		echo "'${backupCfg}' - delete empty lines or comment them out."
+		exit 1
+	fi
+
+	# Set a default backup name if required.
+	if [ -z "${backupName}" ]
+	then
+		backupName="${backupNameDefault}"
+	fi
+
+	grep -v "^[[:space:]]*#" "${backupCfg}" | \
+		grep -q "[[:space:]]\+${backupName}[[:space:]]*$"
+	if [ "${?}" -ne 0 ]
+	then
+		echo -n "Error: No entries for '${backupName}' in file "
+		echo "'${backupCfg}'."
+		exit 1
+	fi
+}
+
+function setLockFile()
+{
+	declare cmdAtPID
+
+	# If the lockfile exists
+	if [ -f "${lockFile}" ]
+	then
+		# If the lockfile points to a process by the same name
+		cmdAtPID="$(ps -p $(cat "${lockFile}") -o comm=)"
+		echo "${cmdAtPID}" | grep -q "^${scriptName}$"
+		if [ "${?}" -eq 0 ]
+		then
+			# Wait 10 minutes and try again.
+			echo "Sleeping, waiting for the lock to free up."
+			sleep 600
+			setLockFile
+		else
+			# Old lock file. Overwrite it.
+			echo ${$} > "${lockFile}"
+		fi
+	else
+		echo ${$} > "${lockFile}"
+	fi
+}
+
+function delLockFile()
+{
+	rm -f "${lockFile}"
+}
+
+function checkIsSource()
+{
+	declare -r variable="${1}"
+	declare -r variableLine="${2}"
+	declare hostName
+	declare pathName
+
+	hostName="$(echo ${variable} | cut -d ':' -f 1)"
+	pathName="$(echo ${variable} | cut -d ':' -f 2)"
+
+	checkIsHost ${hostName} ${variableLine}
+	checkIsPath ${pathName} ${variableLine} 0
+}
+
+function checkIsPath()
+{
+	declare -r variable="${1}"
+	declare -r variableLine="${2}"
+	declare -ri checkPath="${3}"  # Check if it exists locally?
+
+	echo "${variable}" | grep -q '^\/.*$' || \
+		{
+			echo -n "Error: '${variable}' is not an absolute "
+			echo "path on line ${variableLine} of file '${backupCfg}'."
+			exit 1
+		}
+
+	if [ "${checkPath}" -eq 1 -a ! -d "${variable}" ]
+	then
+		echo -n "Error: '${variable}' (as referenced on line "
+		echo "${variableLine} of file '${backupCfg}' does not exist!"
+		exit 1
+	fi
+}
+
+function checkIsInt()
+{
+	declare -r variable="${1}"
+	declare -r variableName="${2}"
+	declare -r variableLine="${3}"
+
+	echo "${variable}" | grep -q '^[[:digit:]]*$' || \
+		{
+			echo -n "Error: '${variableName}' is not an integer on "
+			echo "line ${variableLine} of file '${backupCfg}'."
+			exit 1
+		}
+}
+
+function checkIsAlnum()
+{
+	declare -r backup="${1}"
+	declare -r backup_name="${2}"
+	declare -r lineNum="${3}"
+
+	echo "${backup}" | grep -q '^[[:alnum:]_-]*$' || \
+		{
+			echo -n "Error: '${backup_name}' is not an integer on "
+			echo "line ${lineNum} of file '${backupCfg}'."
+			exit 1
+		}
+}
+
+function checkIsHost()
+{
+	declare -r hostName="${1}"
+	declare -r variableLine="${2}"
+
+	ping -c 1 ${hostName} >/dev/null
+	if [ "${?}" -ne 0 ]
+	then
+		echo -n "Warning: Cannot ping host '${hostName}', "
+		echo -n "referenced on line ${variableLine} of file "
+		echo -e "'${backupCfg}'.\nWe may fail at running rsync later."
+	fi
+}
+
+function rsyncCmd()
+{
+	declare -r rmtHostName="${1}"
+	declare -r rmtPathName="${2}"
+	declare -r local_backup_dir="${3}"
+	declare -i rsyncFail=0
+	declare -r rsyncExclude="--exclude=/proc/* --exclude=/dev/*
+		--exclude=/sys/* --exclude=/lost+found/* --exclude=/tmp/*"
+
+	if [ -d "${local_backup_dir}.1" ]
+	then
+		rsync -a -e ssh --delete \
+			$([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
+			--link-dest=${local_backup_dir}.1 \
+			root@${rmtHostName}:${rmtPathName} \
+			"${local_backup_dir}.0" || rsyncFail=1
+	else
+		rsync -a -e ssh --delete \
+			$([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
+			root@${rmtHostName}:${rmtPathName} \
+			"${local_backup_dir}.0" || rsyncFail=1
+	fi
+
+	if [ "${rsyncFail}" -ne 0 ]
+	then
+		{
+			echo -n "Warning: Rsync from "
+			echo -n "root@${rmtHostName}:${rmtPathName} "
+			echo "failed."
+		} >&2
+	fi
+}
+
+function syncFiles()
+{
+	declare -r source_path="${1}"
+	declare -r local_path="${2}"
+	declare -i keep="${3}"
+	declare -r backup_name="${4}"
+	declare -r rmtHostName="$(echo ${source_path} | cut -d ':' -f 1)"
+	declare -r rmtPathName="$(echo ${source_path} | cut -d ':' -f 2)"
+	declare snapshotHourNum
+	declare snapshotMonthNum
+	declare snapshotYearNum
+	declare -i rsyncFail=0
+
+	# Unlike the config file, we count from 0. Subtract 1.
+	(( keep-- ))
+
+	for snapshotHourNum in $(seq ${keep} -1 0)
+	do
+		if [ "${snapshotHourNum}" -eq "${keep}" ]
+		then
+			# Delete the oldest snapshot
+			rm -rf "${local_path}/${backup_name}.${snapshotHourNum}"
+		else
+			# Increment the snapshot number of all other exiting snapshots.
+			if [ -d "${local_path}/${backup_name}.${snapshotHourNum}" ]
+			then
+				mv ${local_path}/${backup_name}.${snapshotHourNum} \
+					${local_path}/${backup_name}.$(( snapshotHourNum + 1 ))
+			fi
+		fi
+
+		if [ "${snapshotHourNum}" -eq 0 ]
+		then
+			if [ "${backupNameDefault}" = "${backup_name}" ]
+			then
+				rsyncCmd "${rmtHostName}" "${rmtPathName}" \
+					"${local_path}/${backup_name}"
+			else
+				# Just grab the latest default backup, if available.
+				if [ -d "${local_path}/${backupNameDefault}.0" ]
+				then
+					cp -al "${local_path}/${backupNameDefault}.0" \
+						"${local_path}/${backup_name}.0"
+				else
+					rsyncCmd "${rmtHostName}" "${rmtPathName}" \
+						"${local_path}/${backup_name}"
+				fi
+			fi
+		fi
+	done
+}
+
+function checkCfgRows()
+{
+	declare source_path
+	declare local_path
+	declare keep
+	declare backup_name
+	declare -i lineNum=0
+	declare variable
+
+	while read source_path local_path keep backup_name
+	do
+		(( lineNum++ ))
+
+		# Ignore comment lines
+		[ "${source_path:0:1}" = "#" ] && continue
+
+		# Check config file lines look valid.
+		checkIsSource ${source_path} ${lineNum}
+		checkIsPath ${local_path} ${lineNum} 1
+		checkIsInt ${keep} keep ${lineNum}
+		checkIsAlnum ${backup_name} backup_name ${lineNum}
+
+	done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
+
+
+}
+
+function fetchCfgRows()
+{
+	declare source_path
+	declare local_path
+	declare keep
+	declare backup_name
+	declare variable
+
+	while read source_path local_path keep backup_name
+	do
+		# Ignore comment lines
+		[ "${source_path:0:1}" = "#" ] && continue
+
+		if [ "${backupName}" = "${backup_name}" ]
+		then
+			syncFiles ${source_path} ${local_path} \
+				${keep} ${backup_name}
+		fi
+	done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
+
+
+}
+
+
+## Begin execution
+#
+
+safetyChecks
+setLockFile
+checkCfgRows
+fetchCfgRows
+delLockFile
+
+# EOF

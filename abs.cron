@@ -1,0 +1,29 @@
+# /etc/cron.d/abs: ABS Backup System schedule.
+#
+# From the crontab(5) man page:
+#
+# field          allowed values
+# -----          --------------
+# minute         0-59
+# hour           0-23
+# day of month   1-31
+# month          1-12 (or names, see below)
+# day of week    0-7 (0 or 7 is Sun, or use names)
+#
+# Assumption:
+# Backups take no longer than 6 hours to complete. Fortunately, the backup
+# script uses a lock file and will delay execution until it is removed or
+# becomes invalid - and will e-mail warnings.
+#
+# See /usr/local/etc/abs.conf to see which backup names are used. If nothing
+# is specified, "daily" is the default. This default name may need to be
+# changed if ever more frequent backups are required.
+
+MAILTO="root"
+
+0  0  *  *  * root /usr/local/sbin/abs daily
+0  6  *  *  0 root /usr/local/sbin/abs weekly
+0  12 1  *  * root /usr/local/sbin/abs monthly
+0  18 1  1  * root /usr/local/sbin/abs yearly
+
+# /etc/cron.d/abs EOF

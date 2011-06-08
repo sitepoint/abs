@@ -1,0 +1,14 @@
+==-. ABS Backup System .-==
+
+ABS is free software, released under the GNU GPL3 or (at your option) any
+later version; see the file LICENSE for the details.
+
+1. QUICK START
+
+  1. Copy abs to /usr/local/sbin/abs
+  2. Edit and copy abs.conf to /etc/abs.conf
+  3. Copy abs.cron to /etc/cron.d/abs
+
+--
+Adam Bolte
+adam.bolte@sitepoint.com
