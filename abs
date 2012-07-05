@@ -27,7 +27,7 @@ declare -r lockFile="/var/run/backups.pid"
 declare -r scriptName="$(basename ${0})"
 declare -r backupNameDefault="daily"
 declare -i verbose=0
-declare backupName="${1}"
+declare backupName
 
 
 ## Functions
@@ -35,168 +35,168 @@ declare backupName="${1}"
 
 function safetyChecks()
 {
-	# Check we're running as root.
-	if [ "${UID}" -ne 0 ]
-	then
-		echo "Error: Must be run as root."
-		exit 1
-	fi
+    # Check we're running as root.
+    if [ "${UID}" -ne 0 ]
+    then
+        echo "Error: Must be run as root."
+        exit 1
+    fi
 
-	# Check the config file exists.
-	if [ ! -f "${backupCfg}" ]
-	then
-		echo "Error: Configuration file not found."
-		exit 1
-	fi
+    # Check the config file exists.
+    if [ ! -f "${backupCfg}" ]
+    then
+        echo "Error: Configuration file not found."
+        exit 1
+    fi
 
-	# Check for empty lines in the configuration 
-	# file - we don't like those. :)
-	grep -q '^[[:space:]]*$' "${backupCfg}"
-	if [ "${?}" -eq 0 ]
-	then
-		echo -n "Error: Invalid whitespace in configuration file "
-		echo "'${backupCfg}' - delete empty lines or comment them out."
-		exit 1
-	fi
+    # Check for empty lines in the configuration 
+    # file - we don't like those. :)
+    grep -q '^[[:space:]]*$' "${backupCfg}"
+    if [ "${?}" -eq 0 ]
+    then
+        echo -n "Error: Invalid whitespace in configuration file "
+        echo "'${backupCfg}' - delete empty lines or comment them out."
+        exit 1
+    fi
 
-	# Set a default backup name if required.
-	if [ -z "${backupName}" ]
-	then
-		backupName="${backupNameDefault}"
-	fi
+    # Set a default backup name if required.
+    if [ -z "${backupName}" ]
+    then
+        backupName="${backupNameDefault}"
+    fi
 
-	grep -v "^[[:space:]]*#" "${backupCfg}" | \
-		grep -q "[[:space:]]\+${backupName}[[:space:]]*$"
-	if [ "${?}" -ne 0 ]
-	then
-		echo -n "Error: No entries for '${backupName}' in file "
-		echo "'${backupCfg}'."
-		exit 1
-	fi
+    grep -v "^[[:space:]]*#" "${backupCfg}" | \
+        grep -q "[[:space:]]\+${backupName}[[:space:]]*$"
+    if [ "${?}" -ne 0 ]
+    then
+        echo -n "Error: No entries for '${backupName}' in file "
+        echo "'${backupCfg}'."
+        exit 1
+    fi
 }
 
 function setLockFile()
 {
-	declare cmdAtPID
+    declare cmdAtPID
 
-	# If the lockfile exists
-	if [ -f "${lockFile}" ]
-	then
-		# If the lockfile points to a process by the same name
-		cmdAtPID="$(ps -p $(cat "${lockFile}") -o comm=)"
-		echo "${cmdAtPID}" | grep -q "^${scriptName}$"
-		if [ "${?}" -eq 0 ]
-		then
-			# Wait 10 minutes and try again.
-			echo "Sleeping, waiting for the lock to free up."
-			sleep 600
-			setLockFile
-		else
-			# Old lock file. Overwrite it.
-			echo ${$} > "${lockFile}"
-		fi
-	else
-		echo ${$} > "${lockFile}"
-	fi
+    # If the lockfile exists
+    if [ -f "${lockFile}" ]
+    then
+        # If the lockfile points to a process by the same name
+        cmdAtPID="$(ps -p $(cat "${lockFile}") -o comm=)"
+        echo "${cmdAtPID}" | grep -q "^${scriptName}$"
+        if [ "${?}" -eq 0 ]
+        then
+            # Wait 10 minutes and try again.
+            echo "Sleeping, waiting for the lock to free up."
+            sleep 600
+            setLockFile
+        else
+            # Old lock file. Overwrite it.
+            echo ${$} > "${lockFile}"
+        fi
+    else
+        echo ${$} > "${lockFile}"
+    fi
 }
 
 function delLockFile()
 {
-	rm -f "${lockFile}"
+    rm -f "${lockFile}"
 }
 
 function checkIsSource()
 {
-	declare -r variable="${1}"
-	declare -r variableLine="${2}"
-	declare hostName
-	declare pathName
+    declare -r variable="${1}"
+    declare -r variableLine="${2}"
+    declare hostName
+    declare pathName
 
-	hostName="$(echo ${variable} | cut -d ':' -f 1)"
-	pathName="$(echo ${variable} | cut -d ':' -f 2)"
+    hostName="$(echo ${variable} | cut -d ':' -f 1)"
+    pathName="$(echo ${variable} | cut -d ':' -f 2)"
 
-	checkIsHost ${hostName} ${variableLine}
-	checkIsPath ${pathName} ${variableLine} 0
+    checkIsHost ${hostName} ${variableLine}
+    checkIsPath ${pathName} ${variableLine} 0
 }
 
 function checkIsPath()
 {
-	declare -r variable="${1}"
-	declare -r variableLine="${2}"
-	declare -ri checkPath="${3}"  # Check if it exists locally?
+    declare -r variable="${1}"
+    declare -r variableLine="${2}"
+    declare -ri checkPath="${3}"  # Check if it exists locally?
 
-	echo "${variable}" | grep -q '^\/.*$' || \
-		{
-			echo -n "Error: '${variable}' is not an absolute "
-			echo "path on line ${variableLine} of file '${backupCfg}'."
-			exit 1
-		}
+    echo "${variable}" | grep -q '^\/.*$' || \
+        {
+            echo -n "Error: '${variable}' is not an absolute "
+            echo "path on line ${variableLine} of file '${backupCfg}'."
+            exit 1
+        }
 
-	if [ "${checkPath}" -eq 1 -a ! -d "${variable}" ]
-	then
-		echo -n "Error: '${variable}' (referenced on line "
-		echo "${variableLine} of file '${backupCfg}') does not exist!"
-		exit 1
-	fi
+    if [ "${checkPath}" -eq 1 -a ! -d "${variable}" ]
+    then
+        echo -n "Error: '${variable}' (referenced on line "
+        echo "${variableLine} of file '${backupCfg}') does not exist!"
+        exit 1
+    fi
 }
 
 function checkIsInt()
 {
-	declare -r variable="${1}"
-	declare -r variableName="${2}"
-	declare -r variableLine="${3}"
+    declare -r variable="${1}"
+    declare -r variableName="${2}"
+    declare -r variableLine="${3}"
 
-	echo "${variable}" | grep -q '^[[:digit:]]*$' || \
-		{
-			echo -n "Error: '${variableName}' is not an integer on "
-			echo "line ${variableLine} of file '${backupCfg}'."
-			exit 1
-		}
+    echo "${variable}" | grep -q '^[[:digit:]]*$' || \
+        {
+            echo -n "Error: '${variableName}' is not an integer on "
+            echo "line ${variableLine} of file '${backupCfg}'."
+            exit 1
+        }
 }
 
 function checkIsAlnum()
 {
-	declare -r backup="${1}"
-	declare -r backup_name="${2}"
-	declare -r lineNum="${3}"
+    declare -r backup="${1}"
+    declare -r backup_name="${2}"
+    declare -r lineNum="${3}"
 
-	echo "${backup}" | grep -q '^[[:alnum:]_-]*$' || \
-		{
-			echo -n "Error: '${backup_name}' is not an integer on "
-			echo "line ${lineNum} of file '${backupCfg}'."
-			exit 1
-		}
+    echo "${backup}" | grep -q '^[[:alnum:]_-]*$' || \
+        {
+            echo -n "Error: '${backup_name}' is not an integer on "
+            echo "line ${lineNum} of file '${backupCfg}'."
+            exit 1
+        }
 }
 
 function checkIsHost()
 {
-	declare -r hostName="${1}"
-	declare -r variableLine="${2}"
+    declare -r hostName="${1}"
+    declare -r variableLine="${2}"
 
-	ping -c 1 ${hostName} >/dev/null
-	if [ "${?}" -ne 0 ]
-	then
-		echo -n "Warning: Cannot ping host '${hostName}', "
-		echo -n "referenced on line ${variableLine} of file "
-		echo -e "'${backupCfg}'.\nWe may fail at running rsync later."
-	fi
+    ping -c 1 ${hostName} >/dev/null
+    if [ "${?}" -ne 0 ]
+    then
+        echo -n "Warning: Cannot ping host '${hostName}', "
+        echo -n "referenced on line ${variableLine} of file "
+        echo -e "'${backupCfg}'.\nWe may fail at running rsync later."
+    fi
 }
 
 function rsyncCmd()
 {
-	function rsyncFailMsg()
-	{
-		{
-			echo -n "Warning: Rsync from "
-			echo -n "root@${rmtHostName}:${rmtPathName} "
-			echo "failed."
-		} >&2
-	}
+    function rsyncFailMsg()
+    {
+        {
+            echo -n "Warning: Rsync from "
+            echo -n "root@${rmtHostName}:${rmtPathName} "
+            echo "failed."
+        } >&2
+    }
 
-	declare -r rmtHostName="${1}"
-	declare -r rmtPathName="${2}"
-	declare -r local_backup_dir="${3}"
-	declare -i rsyncFail=0
+    declare -r rmtHostName="${1}"
+    declare -r rmtPathName="${2}"
+    declare -r local_backup_dir="${3}"
+    declare -i rsyncFail=0
     declare -r rsyncExclude="--exclude=/dev/*
         --exclude=/home/*/.gvfs
         --exclude=/lost+found/*
@@ -207,144 +207,147 @@ function rsyncCmd()
         --exclude=/srv/chroot/wheezy/proc/*
         --exclude=/srv/chroot/wheezy/sys/*
         --exclude=/srv/chroot/wheezy/tmp/*"
-	declare cmdWrap="time"
+    declare cmdWrap=""
 
-	if [ "${verbose}" -ne 0 ]
-	then
-		printMsg "${rmtHostName}:${rmtPathName}"
-        # Uncomment to disable printing the execution time:
-		#cmdWrap=""
-	fi
+    # Used by the bash time command.
+    TIMEFORMAT=$'\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS'
 
-	if [ -d "${local_backup_dir}.1" ]
-	then
-		${cmdWrap} rsync -a -e ssh --delete \
-			$([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
-			--link-dest=${local_backup_dir}.1 \
-			root@${rmtHostName}:${rmtPathName} \
-			"${local_backup_dir}.0" || rsyncFail=1
-	else
-		${cmdWrap} rsync -a -e ssh --delete \
-			$([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
-			root@${rmtHostName}:${rmtPathName} \
-			"${local_backup_dir}.0" || rsyncFail=1
-	fi
+    echo "${rmtHostName}:${rmtPathName} -> ${local_backup_dir}"
 
-	[ "${rsyncFail}" -ne 0 ] && rsyncFailMsg
+    if [ "${verbose}" -ne 0 ]
+    then
+        cmdWrap="time"
+    fi
 
-	# Formatting improvements
-	[ "${verbose}" -en 0 ] && echo -e '\n'
+    # We use eval so the bash (semi-)builtin command takes precedence
+    # when the time package/comamnd is installed.
+    if [ -d "${local_backup_dir}.1" ]
+    then
+        eval ${cmdWrap} rsync -a -e ssh --delete \
+            $([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
+            --link-dest=${local_backup_dir}.1 \
+            root@${rmtHostName}:${rmtPathName} \
+            "${local_backup_dir}.0" || rsyncFail=1
+    else
+        eval ${cmdWrap} rsync -a -e ssh --delete \
+            $([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
+            root@${rmtHostName}:${rmtPathName} \
+            "${local_backup_dir}.0" || rsyncFail=1
+    fi
+
+    [ "${rsyncFail}" -ne 0 ] && rsyncFailMsg
+
+    # Formatting improvements
+    [ "${verbose}" -ne 0 ] && echo -e '\n'
 }
 
 function syncFiles()
 {
-	declare -r source_path="${1}"
-	declare -r local_path="${2}"
-	declare -i keep="${3}"
-	declare -r backup_name="${4}"
-	declare -r rmtHostName="$(echo ${source_path} | cut -d ':' -f 1)"
-	declare -r rmtPathName="$(echo ${source_path} | cut -d ':' -f 2)"
-	declare snapshotHourNum
-	declare snapshotMonthNum
-	declare snapshotYearNum
-	declare -i rsyncFail=0
+    declare -r source_path="${1}"
+    declare -r local_path="${2}"
+    declare -i keep="${3}"
+    declare -r backup_name="${4}"
+    declare -r rmtHostName="$(echo ${source_path} | cut -d ':' -f 1)"
+    declare -r rmtPathName="$(echo ${source_path} | cut -d ':' -f 2)"
+    declare snapshotHourNum
+    declare snapshotMonthNum
+    declare snapshotYearNum
+    declare -i rsyncFail=0
 
-	# Unlike the config file, we count from 0. Subtract 1.
-	(( keep-- ))
+    # Unlike the config file, we count from 0. Subtract 1.
+    (( keep-- ))
 
-	for snapshotHourNum in $(seq ${keep} -1 0)
-	do
-		if [ "${snapshotHourNum}" -eq "${keep}" ]
-		then
-			# Delete the oldest snapshot
-			rm -rf "${local_path}/${backup_name}.${snapshotHourNum}"
-		else
-			# Increment the snapshot number of all other exiting snapshots.
-			if [ -d "${local_path}/${backup_name}.${snapshotHourNum}" ]
-			then
-				mv ${local_path}/${backup_name}.${snapshotHourNum} \
-					${local_path}/${backup_name}.$(( snapshotHourNum + 1 ))
-			fi
-		fi
+    for snapshotHourNum in $(seq ${keep} -1 0)
+    do
+        if [ "${snapshotHourNum}" -eq "${keep}" ]
+        then
+            # Delete the oldest snapshot
+            rm -rf "${local_path}/${backup_name}.${snapshotHourNum}"
+        else
+            # Increment the snapshot number of all other exiting snapshots.
+            if [ -d "${local_path}/${backup_name}.${snapshotHourNum}" ]
+            then
+                mv ${local_path}/${backup_name}.${snapshotHourNum} \
+                    ${local_path}/${backup_name}.$(( snapshotHourNum + 1 ))
+            fi
+        fi
 
-		if [ "${snapshotHourNum}" -eq 0 ]
-		then
-			if [ "${backupNameDefault}" = "${backup_name}" ]
-			then
-				rsyncCmd "${rmtHostName}" "${rmtPathName}" \
-					"${local_path}/${backup_name}"
-			else
-				# Just grab the latest default backup, if available.
-				if [ -d "${local_path}/${backupNameDefault}.0" ]
-				then
-					cp -al "${local_path}/${backupNameDefault}.0" \
-						"${local_path}/${backup_name}.0"
-				else
-					rsyncCmd "${rmtHostName}" "${rmtPathName}" \
-						"${local_path}/${backup_name}"
-				fi
-			fi
-		fi
-	done
+        if [ "${snapshotHourNum}" -eq 0 ]
+        then
+            if [ "${backupNameDefault}" = "${backup_name}" ]
+            then
+                rsyncCmd "${rmtHostName}" "${rmtPathName}" \
+                    "${local_path}/${backup_name}"
+            else
+                # Just grab the latest default backup, if available.
+                if [ -d "${local_path}/${backupNameDefault}.0" ]
+                then
+                    cp -al "${local_path}/${backupNameDefault}.0" \
+                        "${local_path}/${backup_name}.0"
+                else
+                    rsyncCmd "${rmtHostName}" "${rmtPathName}" \
+                        "${local_path}/${backup_name}"
+                fi
+            fi
+        fi
+    done
 }
 
 function checkCfgRows()
 {
-	declare source_path
-	declare local_path
-	declare keep
-	declare backup_name
-	declare -i lineNum=0
-	declare variable
+    declare source_path
+    declare local_path
+    declare keep
+    declare backup_name
+    declare -i lineNum=0
+    declare variable
 
-	while read source_path local_path keep backup_name
-	do
-		(( lineNum++ ))
+    while read source_path local_path keep backup_name
+    do
+        (( lineNum++ ))
 
-		# Ignore comment lines
-		[ "${source_path:0:1}" = "#" ] && continue
+        # Ignore comment lines
+        [ "${source_path:0:1}" = "#" ] && continue
 
-		# Check config file lines look valid.
-		checkIsSource ${source_path} ${lineNum}
-		checkIsPath ${local_path} ${lineNum} 1
-		checkIsInt ${keep} keep ${lineNum}
-		checkIsAlnum ${backup_name} backup_name ${lineNum}
+        # Check config file lines look valid.
+        checkIsSource ${source_path} ${lineNum}
+        checkIsPath ${local_path} ${lineNum} 1
+        checkIsInt ${keep} keep ${lineNum}
+        checkIsAlnum ${backup_name} backup_name ${lineNum}
 
-	done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
+    done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
 
 
 }
 
 function fetchCfgRows()
 {
-	declare source_path
-	declare local_path
-	declare keep
-	declare backup_name
-	declare variable
+    declare source_path
+    declare local_path
+    declare keep
+    declare backup_name
+    declare variable
 
-	while read source_path local_path keep backup_name
-	do
-		# Ignore comment lines
-		[ "${source_path:0:1}" = "#" ] && continue
+    while read source_path local_path keep backup_name
+    do
+        # Ignore comment lines
+        [ "${source_path:0:1}" = "#" ] && continue
 
-		if [ "${backupName}" = "${backup_name}" ]
-		then
-			syncFiles ${source_path} ${local_path} \
-				${keep} ${backup_name}
-		fi
-	done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
-
-
+        if [ "${backupName}" = "${backup_name}" ]
+        then
+            syncFiles ${source_path} ${local_path} \
+                ${keep} ${backup_name}
+        fi
+    done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
 }
 
 function printUsage()
 {
-	echo "Usage: ${0} [OPTIONS]"
-	echo
-	echo "where:"
-	echo "-h      print help"
-	echo "-v      be verbose"
+    echo "Usage: ${0} [OPTIONS]"
+    echo
+    echo "where:"
+    echo "-h      print help"
+    echo "-v      be verbose"
 }
 
 function printArgError
@@ -354,30 +357,33 @@ function printArgError
 
 function getOpts()
 {
-	declare option
+    declare option
     declare -i failure=0
     declare -i help=0
 
-	while getopts ":vh" option
-	do
-		case ${option} in
-			h )
+    while getopts ":vh" option
+    do
+        case ${option} in
+            h )
                 [ "${help}" -ne 1 ] && help=1
-				;;
-			v )
+                ;;
+            v )
                 [ "${verbose}" -ne 1 ] && verbose=1
-				;;
-			* )
-				{
-					printArgError ${OPTARG}
+                ;;
+            * )
+                {
+                    printArgError ${OPTARG}
                     failure=1
-				} >&2
-				;;
-		esac
-	done
-	shift $(($OPTIND - 1))
+                } >&2
+                ;;
+        esac
+    done
+    shift $(($OPTIND - 1))
 
-    if [ "${*}" != "" ]
+    backupName="${1}"
+    shift
+
+    if [ -n "${*}" ]
     then
         printArgError ${@}
         failure=1
@@ -391,7 +397,7 @@ function getOpts()
     fi
 
     [ "${help}" -ne 0 ] && { printUsage ; exit 0 ; }
-    [ "${verbose}" -ne 0 ] && echo "Verbose mode activated."
+    [ "${verbose}" -ne 0 ] && echo -e "Verbose mode activated.\n"
 }
 
 
