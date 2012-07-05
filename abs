@@ -197,8 +197,16 @@ function rsyncCmd()
 	declare -r rmtPathName="${2}"
 	declare -r local_backup_dir="${3}"
 	declare -i rsyncFail=0
-	declare -r rsyncExclude="--exclude=/proc/* --exclude=/dev/*
-		--exclude=/sys/* --exclude=/lost+found/* --exclude=/tmp/*"
+    declare -r rsyncExclude="--exclude=/dev/*
+        --exclude=/home/*/.gvfs
+        --exclude=/lost+found/*
+        --exclude=/proc/*
+        --exclude=/sys/*
+        --exclude=/tmp/*
+        --exclude=/srv/chroot/wheezy/dev/*
+        --exclude=/srv/chroot/wheezy/proc/*
+        --exclude=/srv/chroot/wheezy/sys/*
+        --exclude=/srv/chroot/wheezy/tmp/*"
 	declare cmdWrap="time"
 
 	if [ "${verbose}" -ne 0 ]
