@@ -26,6 +26,7 @@ declare -r backupCfg="/usr/local/etc/abs.conf"
 declare -r lockFile="/var/run/backups.pid"
 declare -r scriptName="$(basename ${0})"
 declare -r backupNameDefault="daily"
+declare -i verbose=0
 declare backupName="${1}"
 
 
@@ -133,8 +134,8 @@ function checkIsPath()
 
 	if [ "${checkPath}" -eq 1 -a ! -d "${variable}" ]
 	then
-		echo -n "Error: '${variable}' (as referenced on line "
-		echo "${variableLine} of file '${backupCfg}' does not exist!"
+		echo -n "Error: '${variable}' (referenced on line "
+		echo "${variableLine} of file '${backupCfg}') does not exist!"
 		exit 1
 	fi
 }
@@ -183,35 +184,48 @@ function checkIsHost()
 
 function rsyncCmd()
 {
+	function rsyncFailMsg()
+	{
+		{
+			echo -n "Warning: Rsync from "
+			echo -n "root@${rmtHostName}:${rmtPathName} "
+			echo "failed."
+		} >&2
+	}
+
 	declare -r rmtHostName="${1}"
 	declare -r rmtPathName="${2}"
 	declare -r local_backup_dir="${3}"
 	declare -i rsyncFail=0
 	declare -r rsyncExclude="--exclude=/proc/* --exclude=/dev/*
 		--exclude=/sys/* --exclude=/lost+found/* --exclude=/tmp/*"
+	declare cmdWrap="time"
+
+	if [ "${verbose}" -ne 0 ]
+	then
+		printMsg "${rmtHostName}:${rmtPathName}"
+        # Uncomment to disable printing the execution time:
+		#cmdWrap=""
+	fi
 
 	if [ -d "${local_backup_dir}.1" ]
 	then
-		rsync -a -e ssh --delete \
+		${cmdWrap} rsync -a -e ssh --delete \
 			$([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
 			--link-dest=${local_backup_dir}.1 \
 			root@${rmtHostName}:${rmtPathName} \
 			"${local_backup_dir}.0" || rsyncFail=1
 	else
-		rsync -a -e ssh --delete \
+		${cmdWrap} rsync -a -e ssh --delete \
 			$([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
 			root@${rmtHostName}:${rmtPathName} \
 			"${local_backup_dir}.0" || rsyncFail=1
 	fi
 
-	if [ "${rsyncFail}" -ne 0 ]
-	then
-		{
-			echo -n "Warning: Rsync from "
-			echo -n "root@${rmtHostName}:${rmtPathName} "
-			echo "failed."
-		} >&2
-	fi
+	[ "${rsyncFail}" -ne 0 ] && rsyncFailMsg
+
+	# Formatting improvements
+	[ "${verbose}" -en 0 ] && echo -e '\n'
 }
 
 function syncFiles()
@@ -316,10 +330,67 @@ function fetchCfgRows()
 
 }
 
+function printUsage()
+{
+	echo "Usage: ${0} [OPTIONS]"
+	echo
+	echo "where:"
+	echo "-h      print help"
+	echo "-v      be verbose"
+}
+
+function printArgError
+{
+    echo "Error: unknown option '${@}'."
+}
+
+function getOpts()
+{
+	declare option
+    declare -i failure=0
+    declare -i help=0
+
+	while getopts ":vh" option
+	do
+		case ${option} in
+			h )
+                [ "${help}" -ne 1 ] && help=1
+				;;
+			v )
+                [ "${verbose}" -ne 1 ] && verbose=1
+				;;
+			* )
+				{
+					printArgError ${OPTARG}
+                    failure=1
+				} >&2
+				;;
+		esac
+	done
+	shift $(($OPTIND - 1))
+
+    if [ "${*}" != "" ]
+    then
+        printArgError ${@}
+        failure=1
+    fi
+
+    if [ "${failure}" -ne 0 ]
+    then
+        echo -e "Aborting.\n"
+        printUsage
+        exit "${failure}" 
+    fi
+
+    [ "${help}" -ne 0 ] && { printUsage ; exit 0 ; }
+    [ "${verbose}" -ne 0 ] && echo "Verbose mode activated."
+}
+
 
 ## Begin execution
 #
 
+getOpts ${@}
 safetyChecks
 setLockFile
 checkCfgRows
