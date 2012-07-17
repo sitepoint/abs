@@ -22,10 +22,12 @@
 ## Variables
 #
 
+declare -r backupNameDefault="daily"
 declare -r backupCfg="/usr/local/etc/abs.conf"
 declare -r lockFile="/var/run/backups.pid"
+
+# There should be no reason to touch anything below this line.
 declare -r scriptName="$(basename ${0})"
-declare -r backupNameDefault="daily"
 declare -i verbose=0
 declare backupName
 
@@ -55,8 +57,8 @@ function doSafetyChecks()
         backupName="${backupNameDefault}"
     fi
 
-    # Ignore comments, condense whitespace, and then verify that the requested
-    # backup has entries in the configuration file.
+    # Ignore comments, condense whitespace, and then verify that the
+    # requested backup has entries in the configuration file.
     sed -e 's/#.*$//;s/[[:space:]]\+/\ /g' "${backupCfg}" | \
         grep -q "[[:space:]]\+${backupName}[[:space:]]*$"
     if [ "${?}" -ne 0 ]
@@ -173,6 +175,25 @@ function checkIsHost()
     fi
 }
 
+function findLastGoodBackup()
+{
+    declare -r local_path="${1}"
+    declare -r backup_name="${2}"
+
+    for backup in $(find "${local_path}" -mindepth 1 -maxdepth 1 \
+        -type d -name 'daily.*' | sort -V)
+    do
+        if [ ! -f "${backup}.incomplete" ]
+        then
+            echo "${backup:${#backup}-1}"
+            return 0
+        fi
+    done
+
+    # We didn't find anything.
+    echo 0
+}
+
 function rsyncCmd()
 {
     function rsyncFailMsg()
@@ -186,7 +207,9 @@ function rsyncCmd()
 
     declare -r rmtHostName="${1}"
     declare -r rmtPathName="${2}"
-    declare -r local_backup_dir="${3}"
+    declare -r local_path="${3}"
+    declare -r backup_name="${4}"
+    declare -r local_backup_dir="${3}/${4}"
     declare -i rsyncFail=0
     declare -r rsyncExclude="--exclude=/dev/*
         --exclude=/home/*/.gvfs
@@ -199,32 +222,32 @@ function rsyncCmd()
         --exclude=/srv/chroot/wheezy/sys/*
         --exclude=/srv/chroot/wheezy/tmp/*"
     declare cmdWrap=""
+    declare -i last_good=0
 
     # Used by the bash time command.
     TIMEFORMAT=$'\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS'
 
-    echo "${rmtHostName}:${rmtPathName} -> ${local_backup_dir}"
 
     if [ "${verbose}" -ne 0 ]
     then
         cmdWrap="time"
     fi
 
+    echo "${rmtHostName}:${rmtPathName} -> ${local_backup_dir}.0"
+
+    touch "${local_backup_dir}.0.incomplete"
+
+    last_good="$(findLastGoodBackup "${local_path}" "${backup_name}")"
+
     # We use eval so the bash (semi-)builtin command takes precedence
     # when the time package/comamnd is installed.
-    if [ -d "${local_backup_dir}.1" ]
-    then
-        eval ${cmdWrap} rsync -a -e ssh --delete \
-            $([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
-            --link-dest=${local_backup_dir}.1 \
-            root@${rmtHostName}:${rmtPathName} \
-            "${local_backup_dir}.0" || rsyncFail=1
-    else
-        eval ${cmdWrap} rsync -a -e ssh --delete \
-            $([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
-            root@${rmtHostName}:${rmtPathName} \
-            "${local_backup_dir}.0" || rsyncFail=1
-    fi
+    eval ${cmdWrap} rsync -a -e ssh --delete \
+        $([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
+        $([ "${last_good}" -ne 0 ] && \
+            echo --link-dest=${local_backup_dir}.${last_good}) \
+        root@${rmtHostName}:${rmtPathName} \
+        "${local_backup_dir}.0" && \
+            rm -f "${local_backup_dir}.0.incomplete" || rsyncFail=1
 
     if [ "${rsyncFail}" -ne 0 ]
     then
@@ -248,6 +271,7 @@ function syncFiles()
     declare -r rmtPathName="$(echo ${source_path} | cut -d ':' -f 2)"
     declare snapshotNum
     declare -i rsyncFail=0
+    declare cmdWrap=""
 
     # Unlike the config file, we count from 0. Subtract 1.
     (( keep-- ))
@@ -257,13 +281,19 @@ function syncFiles()
         if [ "${snapshotNum}" -eq "${keep}" ]
         then
             # Delete the oldest snapshot
-            rm -rf "${local_path}/${backup_name}.${snapshotNum}"
+            rm -rf "${local_path}/${backup_name}.${snapshotNum}"{,.incomplete}
         else
             # Increment the snapshot number of all other exiting snapshots.
             if [ -d "${local_path}/${backup_name}.${snapshotNum}" ]
             then
-                mv ${local_path}/${backup_name}.${snapshotNum} \
-                    ${local_path}/${backup_name}.$(( snapshotNum + 1 ))
+                mv "${local_path}/${backup_name}.${snapshotNum}" \
+                    "${local_path}/${backup_name}.$(( snapshotNum + 1 ))"
+            fi
+            # Don't forget to increment any '.incomplete' notices also.
+            if [ -f "${local_path}/${backup_name}.${snapshotNum}.incomplete" ]
+            then
+                mv "${local_path}/${backup_name}.${snapshotNum}.incomplete" \
+                    "${local_path}/${backup_name}.$(( snapshotNum + 1 )).incomplete"
             fi
         fi
 
@@ -272,16 +302,32 @@ function syncFiles()
             if [ "${backupNameDefault}" = "${backup_name}" ]
             then
                 rsyncCmd "${rmtHostName}" "${rmtPathName}" \
-                    "${local_path}/${backup_name}"
+                    "${local_path}" "${backup_name}"
             else
-                # Just grab the latest default backup, if available.
-                if [ -d "${local_path}/${backupNameDefault}.0" ]
+                # Just grab the latest default backup.
+                last_good="$(findLastGoodBackup "${local_path}" \
+                    "${backupNameDefault}")"
+
+                # TODO: break into separate functions.
+                echo -n "${local_path}/${backupNameDefault}.${last_good} -> "
+                echo "${local_path}/${backup_name}.0"
+                touch "${local_path}/${backup_name}.0.incomplete"
+
+                if [ "${verbose}" -ne 0 ]
                 then
-                    cp -al "${local_path}/${backupNameDefault}.0" \
-                        "${local_path}/${backup_name}.0"
-                else
-                    rsyncCmd "${rmtHostName}" "${rmtPathName}" \
-                        "${local_path}/${backup_name}"
+                    cmdWrap="time"
+                fi
+
+                eval ${cmdWrap} cp -al "${local_path}/${backupNameDefault}.${last_good}" \
+                    "${local_path}/${backup_name}.0" && \
+                    rm -f "${local_path}/${backup_name}.0.incomplete" || \
+                    printWarning \
+                        "Problem detected creating backup '${backup_name}.0'."
+
+                # Formatting improvements
+                if [ "${verbose}" -ne 0 ]
+                then
+                    echo -e '\n'
                 fi
             fi
         fi
