@@ -33,7 +33,7 @@ declare backupName
 ## Functions
 #
 
-function safetyChecks()
+function doSafetyChecks()
 {
     # Check we're running as root.
     if [ "${UID}" -ne 0 ]
@@ -306,7 +306,7 @@ function checkCfgRows()
     do
         (( lineNum++ ))
 
-        # Ignore comment lines
+        # Ignore comments.
         [ "${source_path:0:1}" = "#" ] && continue
 
         # Check config file lines look valid.
@@ -316,8 +316,6 @@ function checkCfgRows()
         checkIsAlnum ${backup_name} backup_name ${lineNum}
 
     done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
-
-
 }
 
 function fetchCfgRows()
@@ -405,7 +403,7 @@ function getOpts()
 #
 
 getOpts ${@}
-safetyChecks
+doSafetyChecks
 setLockFile
 checkCfgRows
 fetchCfgRows
