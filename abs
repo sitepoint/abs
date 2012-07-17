@@ -38,14 +38,14 @@ function doSafetyChecks()
     # Check we're running as root.
     if [ "${UID}" -ne 0 ]
     then
-        echo "Error: Must be run as root."
+        printError "Must be run as root."
         exit 1
     fi
 
     # Check the config file exists.
     if [ ! -f "${backupCfg}" ]
     then
-        echo "Error: Configuration file not found."
+        printError "Configuration file not found."
         exit 1
     fi
 
@@ -61,8 +61,7 @@ function doSafetyChecks()
         grep -q "[[:space:]]\+${backupName}[[:space:]]*$"
     if [ "${?}" -ne 0 ]
     then
-        echo -n "Error: No entries for '${backupName}' in file "
-        echo "'${backupCfg}'."
+        printError "No entries for '${backupName}' in file '${backupCfg}'."
         exit 1
     fi
 }
@@ -108,7 +107,8 @@ function checkIsSource()
     pathName="$(echo ${variable} | cut -d ':' -f 2)"
 
     checkIsHost ${hostName} ${variableLine}
-    checkIsPath ${pathName} ${variableLine} 0
+    checkIsPath ${pathName} ${variableLine} 0 || \
+        return 1
 }
 
 function checkIsPath()
@@ -119,44 +119,43 @@ function checkIsPath()
 
     echo "${variable}" | grep -q '^\/.*$' || \
         {
-            echo -n "Error: '${variable}' is not an absolute "
+            echo -n "Warning: '${variable}' is not an absolute "
             echo "path on line ${variableLine} of file '${backupCfg}'."
-            exit 1
+            return 1
         }
 
     if [ "${checkPath}" -eq 1 -a ! -d "${variable}" ]
     then
-        echo -n "Error: '${variable}' (referenced on line "
+        echo -n "Warning: '${variable}' (referenced on line "
         echo "${variableLine} of file '${backupCfg}') does not exist!"
-        exit 1
+        return 1
     fi
 }
 
 function checkIsInt()
 {
     declare -r variable="${1}"
-    declare -r variableName="${2}"
-    declare -r variableLine="${3}"
+    declare -r variableLine="${2}"
 
     echo "${variable}" | grep -q '^[[:digit:]]*$' || \
         {
-            echo -n "Error: '${variableName}' is not an integer on "
+            echo -n "Warning: '${variable}' is not an integer on "
             echo "line ${variableLine} of file '${backupCfg}'."
-            exit 1
+            return 1
         }
 }
 
+# Not certain there is any benefit to this check as currently used.
 function checkIsAlnum()
 {
     declare -r backup="${1}"
-    declare -r backup_name="${2}"
-    declare -r lineNum="${3}"
+    declare -r lineNum="${2}"
 
     echo "${backup}" | grep -q '^[[:alnum:]_-]*$' || \
         {
-            echo -n "Error: '${backup_name}' is not an integer on "
+            echo -n "Warning: '${backup}' is not a valid name on "
             echo "line ${lineNum} of file '${backupCfg}'."
-            exit 1
+            return 1
         }
 }
 
@@ -227,10 +226,16 @@ function rsyncCmd()
             "${local_backup_dir}.0" || rsyncFail=1
     fi
 
-    [ "${rsyncFail}" -ne 0 ] && rsyncFailMsg
+    if [ "${rsyncFail}" -ne 0 ]
+    then
+        rsyncFailMsg
+    fi
 
     # Formatting improvements
-    [ "${verbose}" -ne 0 ] && echo -e '\n'
+    if [ "${verbose}" -ne 0 ]
+    then
+        echo -e '\n'
+    fi
 }
 
 function syncFiles()
@@ -241,30 +246,28 @@ function syncFiles()
     declare -r backup_name="${4}"
     declare -r rmtHostName="$(echo ${source_path} | cut -d ':' -f 1)"
     declare -r rmtPathName="$(echo ${source_path} | cut -d ':' -f 2)"
-    declare snapshotHourNum
-    declare snapshotMonthNum
-    declare snapshotYearNum
+    declare snapshotNum
     declare -i rsyncFail=0
 
     # Unlike the config file, we count from 0. Subtract 1.
     (( keep-- ))
 
-    for snapshotHourNum in $(seq ${keep} -1 0)
+    for snapshotNum in $(seq ${keep} -1 0)
     do
-        if [ "${snapshotHourNum}" -eq "${keep}" ]
+        if [ "${snapshotNum}" -eq "${keep}" ]
         then
             # Delete the oldest snapshot
-            rm -rf "${local_path}/${backup_name}.${snapshotHourNum}"
+            rm -rf "${local_path}/${backup_name}.${snapshotNum}"
         else
             # Increment the snapshot number of all other exiting snapshots.
-            if [ -d "${local_path}/${backup_name}.${snapshotHourNum}" ]
+            if [ -d "${local_path}/${backup_name}.${snapshotNum}" ]
             then
-                mv ${local_path}/${backup_name}.${snapshotHourNum} \
-                    ${local_path}/${backup_name}.$(( snapshotHourNum + 1 ))
+                mv ${local_path}/${backup_name}.${snapshotNum} \
+                    ${local_path}/${backup_name}.$(( snapshotNum + 1 ))
             fi
         fi
 
-        if [ "${snapshotHourNum}" -eq 0 ]
+        if [ "${snapshotNum}" -eq 0 ]
         then
             if [ "${backupNameDefault}" = "${backup_name}" ]
             then
@@ -312,15 +315,26 @@ function doBackup()
         keep="$(echo "${line}" | cut -d ' ' -f 3)"
         backup_name="$(echo "${line}" | cut -d ' ' -f 4)"
 
+        # Check config file lines look valid.
+        checkIsSource ${source_path} ${lineNum} && \
+            checkIsPath ${local_path} ${lineNum} 1 && \
+            checkIsInt ${keep} ${lineNum} && \
+            checkIsAlnum ${backup_name} ${lineNum} || \
+            {
+                # If this was a backup we originally intended to do but are now
+                # skipping, indicate as such.
+                if [ "${backupName}" = "${backup_name}" ]
+                then
+                    printWarning \
+                        "Skipping backup specified on line ${lineNum}."
+                fi
+                continue
+            }
+
         if [ "${backupName}" = "${backup_name}" ]
         then
-            # Check config file lines look valid.
-            checkIsSource ${source_path} ${lineNum}
-            checkIsPath ${local_path} ${lineNum} 1
-            checkIsInt ${keep} keep ${lineNum}
-            checkIsAlnum ${backup_name} backup_name ${lineNum}
-
-            syncFiles ${source_path} ${local_path} ${keep} ${backup_name}
+            syncFiles ${source_path} ${local_path} ${keep} \
+                ${backup_name}
         fi
 
     # When reading in the file, reduce any whitespace to a single space.
@@ -347,9 +361,19 @@ function printUsage()
     echo "# ${0} -v daily"
 }
 
+function printWarning()
+{
+    echo "Warning: ${@}" 1>&2
+}
+
+function printError()
+{
+    echo "Error: ${@}" 1>&2
+}
+
 function printArgError
 {
-    echo "Error: unknown option '${@}'."
+    printError "Unknown option '${@}'."
 }
 
 function getOpts()
