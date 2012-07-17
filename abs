@@ -49,23 +49,15 @@ function doSafetyChecks()
         exit 1
     fi
 
-    # Check for empty lines in the configuration 
-    # file - we don't like those. :)
-    grep -q '^[[:space:]]*$' "${backupCfg}"
-    if [ "${?}" -eq 0 ]
-    then
-        echo -n "Error: Invalid whitespace in configuration file "
-        echo "'${backupCfg}' - delete empty lines or comment them out."
-        exit 1
-    fi
-
     # Set a default backup name if required.
     if [ -z "${backupName}" ]
     then
         backupName="${backupNameDefault}"
     fi
 
-    grep -v "^[[:space:]]*#" "${backupCfg}" | \
+    # Ignore comments, condense whitespace, and then verify that the requested
+    # backup has entries in the configuration file.
+    sed -e 's/#.*$//;s/[[:space:]]\+/\ /g' "${backupCfg}" | \
         grep -q "[[:space:]]\+${backupName}[[:space:]]*$"
     if [ "${?}" -ne 0 ]
     then
@@ -293,7 +285,7 @@ function syncFiles()
     done
 }
 
-function checkCfgRows()
+function doBackup()
 {
     declare source_path
     declare local_path
@@ -301,51 +293,58 @@ function checkCfgRows()
     declare backup_name
     declare -i lineNum=0
     declare variable
+    declare -r oldIFS="${IFS}"
 
-    while read source_path local_path keep backup_name
+    IFS=$'\n'
+
+    while read line
     do
         (( lineNum++ ))
 
         # Ignore comments.
-        [ "${source_path:0:1}" = "#" ] && continue
+        line="$(echo "${line}" | sed -e 's/#.*$//')"
 
-        # Check config file lines look valid.
-        checkIsSource ${source_path} ${lineNum}
-        checkIsPath ${local_path} ${lineNum} 1
-        checkIsInt ${keep} keep ${lineNum}
-        checkIsAlnum ${backup_name} backup_name ${lineNum}
+        # Ignore empty lines (including lines with only whitespace).
+        [ -z "$(echo "${line}" | sed -e 's/[[:space:]]*//g')" ] && continue
 
-    done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
-}
-
-function fetchCfgRows()
-{
-    declare source_path
-    declare local_path
-    declare keep
-    declare backup_name
-    declare variable
-
-    while read source_path local_path keep backup_name
-    do
-        # Ignore comment lines
-        [ "${source_path:0:1}" = "#" ] && continue
+        source_path="$(echo "${line}" | cut -d ' ' -f 1)"
+        local_path="$(echo "${line}" | cut -d ' ' -f 2)"
+        keep="$(echo "${line}" | cut -d ' ' -f 3)"
+        backup_name="$(echo "${line}" | cut -d ' ' -f 4)"
 
         if [ "${backupName}" = "${backup_name}" ]
         then
-            syncFiles ${source_path} ${local_path} \
-                ${keep} ${backup_name}
+            # Check config file lines look valid.
+            checkIsSource ${source_path} ${lineNum}
+            checkIsPath ${local_path} ${lineNum} 1
+            checkIsInt ${keep} keep ${lineNum}
+            checkIsAlnum ${backup_name} backup_name ${lineNum}
+
+            syncFiles ${source_path} ${local_path} ${keep} ${backup_name}
         fi
+
+    # When reading in the file, reduce any whitespace to a single space.
     done < <(sed -e 's/[[:space:]]\+/\ /g' ${backupCfg})
+
+    IFS="${oldIFS}"
 }
 
 function printUsage()
 {
-    echo "Usage: ${0} [OPTIONS]"
+    echo "Usage: ${0} [OPTIONS] [BACKUP]"
     echo
     echo "where:"
+    echo
+    echo "OPTIONS:"
     echo "-h      print help"
     echo "-v      be verbose"
+    echo
+    echo "BACKUP:"
+    echo "Can be anything specified in ${backupCfg}"
+    echo "(defaults to 'daily')."
+    echo
+    echo "eg."
+    echo "# ${0} -v daily"
 }
 
 function printArgError
@@ -405,8 +404,7 @@ function getOpts()
 getOpts ${@}
 doSafetyChecks
 setLockFile
-checkCfgRows
-fetchCfgRows
+doBackup
 delLockFile
 
 # EOF
