@@ -1,5 +1,18 @@
-2011-04-18, Adam Bolte <adam.bolte@sitepoint.com>
- - Initial version.
+2012-07-18
+	* Corrected the default path to abs.conf in the README.
+	* Simplified and consolidated two sections of code.
 
-2011-04-19, Adam Bolte <adam.bolte@sitepoint.com>
- - Added support for less-frequent non-daily backups.
+2012-07-17
+	* Mark backups as incomplete if failed, and don't use these when generating hardlinks for future backups.
+	* Empty lines in the config are now permitted. Updated the config comments to reflect that.
+	* If it doesn't halt execution, it's a warning. Make sure warnings do no more harm than skipping the current backup.
+	* Allow comments and whitespace anywhere in the config. Additionally, merge a two-step process for config validation checking and backup execution which also reduces code duplication.
+	* safetyChecks() renamed doSafetyChecks(). Includes comment and whitespace fixes.
+
+2012-07-05
+	* Corrected problem interpreting inputs. Replaced tabs with spaces. Indicate where output will be saved to during execution.
+	* Added more directory exceptions from the rsync backup list.
+	* Implemented -v and -h options.
+
+2011-06-08
+	* Initial commit.
