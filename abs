@@ -227,16 +227,9 @@ function rsyncCmd()
     # Used by the bash time command.
     TIMEFORMAT=$'\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS'
 
-
-    if [ "${verbose}" -ne 0 ]
-    then
-        cmdWrap="time"
-    fi
-
-    echo "${rmtHostName}:${rmtPathName} -> ${local_backup_dir}.0"
-
+    [ "${verbose}" -ne 0 ] && cmdWrap="time"
+    printSrcDst "${rmtHostName}:${rmtPathName}" "${local_backup_dir}.0"
     touch "${local_backup_dir}.0.incomplete"
-
     last_good="$(findLastGoodBackup "${local_path}" "${backup_name}")"
 
     # We use eval so the bash (semi-)builtin command takes precedence
@@ -308,15 +301,10 @@ function syncFiles()
                 last_good="$(findLastGoodBackup "${local_path}" \
                     "${backupNameDefault}")"
 
-                # TODO: break into separate functions.
-                echo -n "${local_path}/${backupNameDefault}.${last_good} -> "
-                echo "${local_path}/${backup_name}.0"
+                printSrcDst "${local_path}/${backupNameDefault}.${last_good}" \
+                    "${local_path}/${backup_name}.0"
                 touch "${local_path}/${backup_name}.0.incomplete"
-
-                if [ "${verbose}" -ne 0 ]
-                then
-                    cmdWrap="time"
-                fi
+                [ "${verbose}" -ne 0 ] && cmdWrap="time"
 
                 eval ${cmdWrap} cp -al "${local_path}/${backupNameDefault}.${last_good}" \
                     "${local_path}/${backup_name}.0" && \
@@ -405,6 +393,11 @@ function printUsage()
     echo
     echo "eg."
     echo "# ${0} -v daily"
+}
+
+function printSrcDst()
+{
+    echo "${1} -> ${2}"
 }
 
 function printWarning()
