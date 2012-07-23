@@ -23,7 +23,8 @@
 #
 
 declare -r backupNameDefault="daily"
-declare -r backupCfg="/usr/local/etc/abs.conf"
+declare -r backupCfg="/usr/local/etc/abs/abs.conf"
+declare -r excludeCfg="/usr/local/etc/abs/exclude.conf"
 declare -r lockFile="/var/run/backups.pid"
 
 # There should be no reason to touch anything below this line.
@@ -194,6 +195,26 @@ function findLastGoodBackup()
     echo 0
 }
 
+function mkRsyncIgnoreString()
+{
+    declare -r oldIFS="${IFS}"
+
+    if [ -f "${excludeCfg}" ]
+    then
+        # Only loop on new lines, truncating unnecessary whitespace.
+        IFS=$'\n'
+        for line in $(sed -e \
+            '/^#.*/d;/^[[:space:]]*$/d;s/^[[:space:]]*\(.*\)/\1/;s/[[:space:]]*$//' \
+            ${excludeCfg})
+        do
+            echo -n "--exclude='${line}' "
+        done
+        IFS="${oldIFS}"
+
+        echo
+    fi
+}
+
 function rsyncCmd()
 {
     function rsyncFailMsg()
@@ -211,16 +232,7 @@ function rsyncCmd()
     declare -r backup_name="${4}"
     declare -r local_backup_dir="${3}/${4}"
     declare -i rsyncFail=0
-    declare -r rsyncExclude="--exclude=/dev/*
-        --exclude=/home/*/.gvfs
-        --exclude=/lost+found/*
-        --exclude=/proc/*
-        --exclude=/sys/*
-        --exclude=/tmp/*
-        --exclude=/srv/chroot/wheezy/dev/*
-        --exclude=/srv/chroot/wheezy/proc/*
-        --exclude=/srv/chroot/wheezy/sys/*
-        --exclude=/srv/chroot/wheezy/tmp/*"
+    declare -r rsyncExclude="$(mkRsyncIgnoreString)"
     declare cmdWrap=""
     declare -i last_good=0
 
