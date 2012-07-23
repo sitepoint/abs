@@ -1,3 +1,6 @@
+2012-07-23
+	* Have rsync exclude directories in exclude.conf instead of them being hard-coded.
+
 2012-07-18
 	* Corrected the default path to abs.conf in the README.
 	* Simplified and consolidated two sections of code.
