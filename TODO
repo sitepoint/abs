@@ -1,2 +1,4 @@
-1. Include more comprehensive documentation.
-2. Add S3 backup support.
+1. Add the ability to specify an alternate configuration as a parameter, which
+   may be useful for once-off backups.
+2. Include more comprehensive documentation.
+3. Add S3 backup support.
