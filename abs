@@ -201,6 +201,9 @@ function mkRsyncIgnoreString()
 
     if [ -f "${excludeCfg}" ]
     then
+        # Disable pathname expansion temporarily.
+        set -o noglob
+
         # Only loop on new lines, truncating unnecessary whitespace.
         IFS=$'\n'
         for line in $(sed -e \
@@ -210,6 +213,9 @@ function mkRsyncIgnoreString()
             echo -n "--exclude='${line}' "
         done
         IFS="${oldIFS}"
+
+        # Re-enable pathname expansion.
+        set +o noglob
 
         echo
     fi

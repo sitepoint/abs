@@ -1,3 +1,6 @@
+2012-07-24
+	* Disable pathname expansion when operating on lines in exclude.conf.
+
 2012-07-23
 	* Have rsync exclude directories in exclude.conf instead of them being hard-coded.
 
