@@ -1,0 +1,133 @@
+#!/bin/bash
+#
+# ARMS Remote Mirror System
+# Copyright (C) 2014 SitePoint Pty Ltd
+#
+# Contact details provided at http://www.sitepoint.com/
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+## Variables
+#
+
+declare -ri verbose=0
+declare -r hostName="${1}"
+declare -r srcPath="${2}"
+declare -r dstPath="${3}"
+declare -r lockFile="/var/run/backups.pid"
+
+
+## Functions
+#
+
+function doSafetyChecks()
+{
+    # Check we're running as root.
+    if [ "${UID}" -ne 0 ]
+    then
+        printError "Must be run as root."
+        exit 1
+    fi
+
+    if [ ! -d "${srcPath}" ]
+    then
+        printError "Source directory '${srcPath}' not found."
+        exit 1
+    fi
+
+    ping -c 1 "${hostName}" >/dev/null
+    if [ "${?}" -ne 0 ]
+    then
+        {
+            echo "Warning: Cannot ping host '${hostName}'."
+            echo "We may fail at running rsync later."
+        } 1>&2
+    fi
+}
+
+function printError()
+{
+    echo "Error: ${@}" 1>&2
+}
+
+# If a lock file exists, wait until it is removed.
+function waitIfLocked()
+{
+    declare cmdAtPID
+
+    # If the lockfile exists
+    if [ -f "${lockFile}" ]
+    then
+        # If the lockfile points to a process by the same name
+        cmdAtPID="$(ps -p $(cat "${lockFile}") -o comm=)"
+        echo "${cmdAtPID}" | grep -q "^${scriptName}$"
+        if [ "${?}" -eq 0 ]
+        then
+            # Wait 10 minutes and try again.
+            echo "Sleeping, waiting for the lock to free up."
+            sleep 600
+            waitIfLocked
+        else
+            # Old lock file. Nuke it.
+            rm -f "${lockFile}"
+        fi
+    fi
+}
+
+function rsyncCmd()
+{
+    function rsyncFailMsg()
+    {
+        {
+            echo -n "Warning: Rsync from "
+            echo -n "root@${hostName}:${dstPath} "
+            echo "failed."
+        } >&2
+    }
+
+    declare -i rsyncFail=0
+    declare cmdWrap=""
+
+    # Used by the bash time command.
+    TIMEFORMAT=$'\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS'
+
+    [ "${verbose}" -ne 0 ] && cmdWrap="time"
+
+    # We use eval so the bash (semi-)builtin command takes precedence
+    # when the time package/comamnd is installed.
+    eval ${cmdWrap} rsync -aH -e ssh --delete \
+        ${srcPath} root@${hostName}:${dstPath} || rsyncFail=1
+
+    if [ "${rsyncFail}" -ne 0 ]
+    then
+        rsyncFailMsg
+    fi
+
+    # Formatting improvements
+    if [ "${verbose}" -ne 0 ]
+    then
+        echo -e '\n'
+    fi
+}
+
+
+## Begin execution
+#
+
+doSafetyChecks
+waitIfLocked
+rsyncCmd
+
+# EOF
