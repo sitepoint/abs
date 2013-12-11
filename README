@@ -1,14 +1,26 @@
-==-. ABS Backup System .-==
+This package is free software, released under the GNU GPL3 or (at your option)
+any later version; see the file LICENSE for the details.
 
-ABS is free software, released under the GNU GPL3 or (at your option) any
-later version; see the file LICENSE for the details.
+==-. ABS Backup System .-==
 
 1. QUICK START
 
   1. Copy abs to /usr/local/sbin/abs
   2. Edit and copy abs.conf to /usr/local/etc/abs/abs.conf
   3. Edit and copy exclude.conf to /usr/local/etc/abs/exclude.conf
-  4. Copy abs.cron to /etc/cron.d/abs
+  4. Add host keys to /root/.ssh/known_hosts.
+  5. Copy backup system SSH public key to remote hosts.
+  6. Edit and copy abs.cron to /etc/cron.d/abs
+
+
+==-. ARMS Remote Mirror System .-==
+
+1. QUICK START
+
+  1. Copy arms to /usr/local/sbin/arms
+  2. Add host keys to /root/.ssh/known_hosts.
+  3. Copy backup system SSH public key to remote hosts.
+  4. Edit and copy abs.cron to /etc/cron.d/abs
 
 --
 Adam Bolte
