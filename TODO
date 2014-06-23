@@ -1,4 +1,10 @@
-1. Add the ability to specify an alternate configuration as a parameter, which
+1. Add the ability to specify an alternate configuration as an argument, which
    may be useful for once-off backups.
 2. Include more comprehensive documentation.
 3. Add S3 backup support.
+4. The ping test should only be ran once per host, not once per entry.
+5. The ping test should have a point. Ping test failure should prevent an
+   rsync attempt.
+6. Once 5 is implemented, the ping test should optionally be disabled for any
+   given host. This should be set in the configuration file, or globally
+   via a command line argument.
