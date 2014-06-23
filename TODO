@@ -8,3 +8,7 @@
 6. Once 5 is implemented, the ping test should optionally be disabled for any
    given host. This should be set in the configuration file, or globally
    via a command line argument.
+7. Keep track of file "meta-data" such as ownership and
+   permissions. When hard-linking, permission changes are not
+   preserved. This could even be considered a bug, but I currently
+   consider it a known limitation.
