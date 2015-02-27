@@ -109,8 +109,8 @@ function checkIsSource()
     hostName="$(echo ${variable} | cut -d ':' -f 1)"
     pathName="$(echo ${variable} | cut -d ':' -f 2)"
 
-    checkIsHost ${hostName} ${variableLine}
-    checkIsPath ${pathName} ${variableLine} 0 || \
+    checkIsHost ${hostName} ${variableLine} && \
+        checkIsPath ${pathName} ${variableLine} 0 || \
         return 1
 }
 
@@ -166,13 +166,22 @@ function checkIsHost()
 {
     declare -r hostName="${1}"
     declare -r variableLine="${2}"
+    declare -r ipValidationRegex='/^\(\([0-9]\|[1-9][0-9]\|1[0-9]\{2\}\|'\
+'2[0-4][0-9]\|25[0-5]\)\.\)\{3\}\([0-9]\|[1-9][0-9]\|1[0-9]\{2\}\|'\
+'2[0-4][0-9]\|25[0-5]\)$/p'
+    declare -r hostnameValidationRegex='/^\(\([a-zA-Z0-9]\|'\
+'[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9]\)\.\)*\([A-Za-z0-9]\|'\
+'[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9]\)$/p'
 
-    ping -c 1 ${hostName} >/dev/null
-    if [ "${?}" -ne 0 ]
+    if [ "$(echo "${hostName}" | sed -n "${ipValidationRegex}")" = \
+        "${hostName}" -o \
+        "$(echo "${hostName}" | sed -n "${hostnameValidationRegex}")" = \
+        "${hostName}" ]
     then
-        echo -n "Warning: Cannot ping host '${hostName}', "
-        echo -n "referenced on line ${variableLine} of file "
-        echo -e "'${backupCfg}'.\nWe may fail at running rsync later."
+        return 0
+    else
+        printWarning "invalid hostname '${hostName}' on line ${variableLine}."
+        return 1
     fi
 }
 
@@ -324,7 +333,8 @@ function syncFiles()
                 touch "${local_path}/${backup_name}.0.incomplete"
                 [ "${verbose}" -ne 0 ] && cmdWrap="time"
 
-                eval ${cmdWrap} cp -al "${local_path}/${backupNameDefault}.${last_good}" \
+                eval ${cmdWrap} cp -al \
+                    "${local_path}/${backupNameDefault}.${last_good}" \
                     "${local_path}/${backup_name}.0" && \
                     rm -f "${local_path}/${backup_name}.0.incomplete" || \
                     printWarning \
@@ -378,7 +388,7 @@ function doBackup()
                 if [ "${backupName}" = "${backup_name}" ]
                 then
                     printWarning \
-                        "Skipping backup specified on line ${lineNum}."
+                        "Skipping invalid backup entry on line ${lineNum}."
                 fi
                 continue
             }
