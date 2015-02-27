@@ -471,7 +471,7 @@ function getOpts()
     then
         echo -e "Aborting.\n"
         printUsage
-        exit "${failure}" 
+        exit "${failure}"
     fi
 
     [ "${help}" -ne 0 ] && { printUsage ; exit 0 ; }
