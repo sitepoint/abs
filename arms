@@ -27,7 +27,7 @@ declare -r hostName="${1}"
 declare -r srcPath="${2}"
 declare -r dstPath="${3}"
 declare -r lockFile="/var/run/backups.pid"
-declare -r bwLimit="10000"
+declare -r bwLimit="0"
 
 
 ## Functions
