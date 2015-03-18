@@ -1,3 +1,6 @@
+2015-03-18
+	* Add support for rsync's bandwidth limit feature.
+
 2015-02-27
 	* Replace the hostname validation method (ping) with regular expressions to improve reliability in case of firewalls that block ICMP traffic.
 
