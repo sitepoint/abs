@@ -193,7 +193,7 @@ function findLastGoodBackup()
     declare -r backup_name="${2}"
 
     for backup in $(find "${local_path}" -mindepth 1 -maxdepth 1 \
-        -type d -name 'daily.*' | sort -V)
+        -type d -name "${backupNameDefault}.*" | sort -V)
     do
         if [ ! -f "${backup}.incomplete" ]
         then
@@ -420,10 +420,10 @@ function printUsage()
     echo
     echo "BACKUP:"
     echo "Can be anything specified in ${backupCfg}"
-    echo "(defaults to 'daily')."
+    echo "(defaults to '${backupNameDefault}')."
     echo
     echo "eg."
-    echo "# ${0} -v daily"
+    echo "# ${0} -v ${backupNameDefault}"
 }
 
 function printSrcDst()
