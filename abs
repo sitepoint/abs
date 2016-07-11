@@ -263,7 +263,7 @@ function rsyncCmd()
 
     # We use eval so the bash (semi-)builtin command takes precedence
     # when the time package/comamnd is installed.
-    eval ${cmdWrap} rsync -a -e ssh --delete \
+    eval ${cmdWrap} rsync -a -e \'ssh -q\' --delete \
         $([ -n "${bwLimit}" ] && echo --bwlimit=${bwLimit}) \
         $([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
         $([ "${last_good}" -ne 0 ] && \
