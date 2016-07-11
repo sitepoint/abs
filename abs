@@ -75,10 +75,10 @@ function setLockFile()
 {
     declare cmdAtPID
 
-    # If the lockfile exists
+    # If the lockfile exists.
     if [ -f "${lockFile}" ]
     then
-        # If the lockfile points to a process by the same name
+        # If the lockfile points to a process by the same name.
         cmdAtPID="$(ps -p $(cat "${lockFile}") -o comm=)"
         echo "${cmdAtPID}" | grep -q "^${scriptName}$"
         if [ "${?}" -eq 0 ]
@@ -120,7 +120,7 @@ function checkIsPath()
 {
     declare -r variable="${1}"
     declare -r variableLine="${2}"
-    declare -ri checkPath="${3}"  # Check if it exists locally?
+    declare -ri checkPath="${3}"  # Check if the path exists locally.
 
     echo "${variable}" | grep -q '^\/.*$' || \
         {
@@ -277,7 +277,7 @@ function rsyncCmd()
         rsyncFailMsg
     fi
 
-    # Formatting improvements
+    # Formatting improvements.
     if [ "${verbose}" -ne 0 ]
     then
         echo -e '\n'
@@ -303,7 +303,7 @@ function syncFiles()
     do
         if [ "${snapshotNum}" -eq "${keep}" ]
         then
-            # Delete the oldest snapshot
+            # Delete the oldest snapshot.
             rm -rf "${local_path}/${backup_name}.${snapshotNum}"{,.incomplete}
         else
             # Increment the snapshot number of all other exiting snapshots.
@@ -343,7 +343,7 @@ function syncFiles()
                     printWarning \
                         "Problem detected creating backup '${backup_name}.0'."
 
-                # Formatting improvements
+                # Formatting improvements.
                 if [ "${verbose}" -ne 0 ]
                 then
                     echo -e '\n'
