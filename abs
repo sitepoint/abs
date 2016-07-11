@@ -193,11 +193,11 @@ function findLastGoodBackup()
     declare -r backup_name="${2}"
 
     for backup in $(find "${local_path}" -mindepth 1 -maxdepth 1 \
-        -type d -name "${backupNameDefault}.*" | sort -V)
+        -type d -name "${backupNameDefault}.*" -printf "%P\n" | sort -V)
     do
         if [ ! -f "${backup}.incomplete" ]
         then
-            echo "${backup:${#backup}-1}"
+            echo "${backup}" | sed 's/.*\.//'
             return 0
         fi
     done
