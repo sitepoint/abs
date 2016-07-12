@@ -75,10 +75,10 @@ function setLockFile()
 {
     declare cmdAtPID
 
-    # If the lockfile exists
+    # If the lockfile exists.
     if [ -f "${lockFile}" ]
     then
-        # If the lockfile points to a process by the same name
+        # If the lockfile points to a process by the same name.
         cmdAtPID="$(ps -p $(cat "${lockFile}") -o comm=)"
         echo "${cmdAtPID}" | grep -q "^${scriptName}$"
         if [ "${?}" -eq 0 ]
@@ -120,7 +120,7 @@ function checkIsPath()
 {
     declare -r variable="${1}"
     declare -r variableLine="${2}"
-    declare -ri checkPath="${3}"  # Check if it exists locally?
+    declare -ri checkPath="${3}"  # Check if the path exists locally.
 
     echo "${variable}" | grep -q '^\/.*$' || \
         {
@@ -193,11 +193,11 @@ function findLastGoodBackup()
     declare -r backup_name="${2}"
 
     for backup in $(find "${local_path}" -mindepth 1 -maxdepth 1 \
-        -type d -name 'daily.*' | sort -V)
+        -type d -name "${backupNameDefault}.*" -printf "%P\n" | sort -V)
     do
         if [ ! -f "${backup}.incomplete" ]
         then
-            echo "${backup:${#backup}-1}"
+            echo "${backup}" | sed 's/.*\.//'
             return 0
         fi
     done
@@ -263,7 +263,7 @@ function rsyncCmd()
 
     # We use eval so the bash (semi-)builtin command takes precedence
     # when the time package/comamnd is installed.
-    eval ${cmdWrap} rsync -a -e ssh --delete \
+    eval ${cmdWrap} rsync -a -e \'ssh -q\' --delete \
         $([ -n "${bwLimit}" ] && echo --bwlimit=${bwLimit}) \
         $([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
         $([ "${last_good}" -ne 0 ] && \
@@ -277,7 +277,7 @@ function rsyncCmd()
         rsyncFailMsg
     fi
 
-    # Formatting improvements
+    # Formatting improvements.
     if [ "${verbose}" -ne 0 ]
     then
         echo -e '\n'
@@ -295,62 +295,93 @@ function syncFiles()
     declare snapshotNum
     declare -i rsyncFail=0
     declare cmdWrap=""
+    declare -i current_snapshots=0
+    declare -i max_snapshot_num=0
 
     # Unlike the config file, we count from 0. Subtract 1.
     (( keep-- ))
 
-    for snapshotNum in $(seq ${keep} -1 0)
+    # Set current_snapshots to number of snapshot directories that
+    # exists. ie. at least partial backups.
+    current_snapshots=$(find "${local_path}" -mindepth 1 -maxdepth 1 \
+        -type d -regex ".*/${backup_name}\.[0-9]+$" | wc -l)
+
+    max_snapshot_num=$(
+        find "${local_path}" -mindepth 1 -maxdepth 1 \
+            -regex ".*/daily\.[0-9]+.*$" -printf "%P\n" | \
+            sed "s/daily\.\([0-9]\+\).*/\1/" | sort -V | tail -n 1
+    )
+
+    # Snapshot rotation and deletion logic.
+    for snapshotNum in $(seq ${max_snapshot_num} -1 0)
     do
-        if [ "${snapshotNum}" -eq "${keep}" ]
+        # We may have old snapshots to remove.
+        if [ ${snapshotNum} -ge ${keep} ]
         then
-            # Delete the oldest snapshot
-            rm -rf "${local_path}/${backup_name}.${snapshotNum}"{,.incomplete}
-        else
-            # Increment the snapshot number of all other exiting snapshots.
-            if [ -d "${local_path}/${backup_name}.${snapshotNum}" ]
+            # Check for empty incomplete snapshots prime for
+            # pruning. The ${current_snapshots} value has no
+            # implications here. ie. If we have 0..8 snapshots and
+            # 4..8 are incomplete and completely empty but keep == 6,
+            # nuke 7..8 despite only having 4 good snapshots.
+            if [ -f "${local_path}/${backup_name}.${snapshotNum}.incomplete" ] && \
+                [ ! -d "${local_path}/${backup_name}.${snapshotNum}" ] && \
+                [ ${snapshotNum} -eq ${max_snapshot_num} ]
             then
-                mv "${local_path}/${backup_name}.${snapshotNum}" \
-                    "${local_path}/${backup_name}.$(( snapshotNum + 1 ))"
-            fi
-            # Don't forget to increment any '.incomplete' notices also.
-            if [ -f "${local_path}/${backup_name}.${snapshotNum}.incomplete" ]
+                rm -f "${local_path}/${backup_name}.${snapshotNum}.incomplete"
+                (( --max_snapshot_num ))
+            # Prune anything else if we have enough "good enough"
+            # snapshots. ie. At least ${keep} number of full or
+            # partial snapshots, including the upcoming snapshot.
+            elif [ $(( current_snapshots + 1 )) -gt $(( keep + 1 )) ]
             then
-                mv "${local_path}/${backup_name}.${snapshotNum}.incomplete" \
-                    "${local_path}/${backup_name}.$(( snapshotNum + 1 )).incomplete"
+                (( --current_snapshots ))
+                rm -rf "${local_path}/${backup_name}.${snapshotNum}"{,.incomplete}
+                (( --max_snapshot_num ))
             fi
         fi
 
-        if [ "${snapshotNum}" -eq 0 ]
+        # Increment the snapshot number of all other exiting snapshots.
+        if [ -d "${local_path}/${backup_name}.${snapshotNum}" ]
         then
-            if [ "${backupNameDefault}" = "${backup_name}" ]
-            then
-                rsyncCmd "${rmtHostName}" "${rmtPathName}" \
-                    "${local_path}" "${backup_name}"
-            else
-                # Just grab the latest default backup.
-                last_good="$(findLastGoodBackup "${local_path}" \
-                    "${backupNameDefault}")"
-
-                printSrcDst "${local_path}/${backupNameDefault}.${last_good}" \
-                    "${local_path}/${backup_name}.0"
-                touch "${local_path}/${backup_name}.0.incomplete"
-                [ "${verbose}" -ne 0 ] && cmdWrap="time"
-
-                eval ${cmdWrap} cp -al \
-                    "${local_path}/${backupNameDefault}.${last_good}" \
-                    "${local_path}/${backup_name}.0" && \
-                    rm -f "${local_path}/${backup_name}.0.incomplete" || \
-                    printWarning \
-                        "Problem detected creating backup '${backup_name}.0'."
-
-                # Formatting improvements
-                if [ "${verbose}" -ne 0 ]
-                then
-                    echo -e '\n'
-                fi
-            fi
+            mv "${local_path}/${backup_name}.${snapshotNum}" \
+                "${local_path}/${backup_name}.$(( snapshotNum + 1 ))"
+        fi
+        # Don't forget to increment any '.incomplete' notices also.
+        if [ -f "${local_path}/${backup_name}.${snapshotNum}.incomplete" ]
+        then
+            mv "${local_path}/${backup_name}.${snapshotNum}.incomplete" \
+                "${local_path}/${backup_name}.$(( snapshotNum + 1 )).incomplete"
         fi
     done
+
+    # Snapshot logic.
+    if [ "${backupNameDefault}" = "${backup_name}" ]
+    then
+        rsyncCmd "${rmtHostName}" "${rmtPathName}" \
+            "${local_path}" "${backup_name}"
+    else
+        # Just grab the latest default backup.
+        last_good="$(findLastGoodBackup "${local_path}" \
+            "${backupNameDefault}")"
+
+        printSrcDst "${local_path}/${backupNameDefault}.${last_good}" \
+            "${local_path}/${backup_name}.0"
+        touch "${local_path}/${backup_name}.0.incomplete"
+        [ "${verbose}" -ne 0 ] && cmdWrap="time"
+
+        eval ${cmdWrap} cp -al \
+            "${local_path}/${backupNameDefault}.${last_good}" \
+            "${local_path}/${backup_name}.0" && \
+            rm -f "${local_path}/${backup_name}.0.incomplete" || \
+            printWarning \
+                "Problem detected creating backup '${backup_name}.0'."
+
+        # Formatting improvements.
+        if [ "${verbose}" -ne 0 ]
+        then
+            echo -e '\n'
+        fi
+    fi
 }
 
 function doBackup()
@@ -420,10 +451,10 @@ function printUsage()
     echo
     echo "BACKUP:"
     echo "Can be anything specified in ${backupCfg}"
-    echo "(defaults to 'daily')."
+    echo "(defaults to '${backupNameDefault}')."
     echo
     echo "eg."
-    echo "# ${0} -v daily"
+    echo "# ${0} -v ${backupNameDefault}"
 }
 
 function printSrcDst()
