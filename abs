@@ -27,6 +27,7 @@ declare -r backupCfg="/usr/local/etc/abs/abs.conf"
 declare -r excludeCfg="/usr/local/etc/abs/exclude.conf"
 declare -r lockFile="/var/run/backups.pid"
 declare -r bwLimit="0"
+declare -r ionice_cmd="ionice -c 2 -n 6"
 
 
 # There should be no reason to touch anything below this line.
@@ -250,13 +251,13 @@ function rsyncCmd()
     declare -r local_backup_dir="${3}/${4}"
     declare -i rsyncFail=0
     declare -r rsyncExclude="$(mkRsyncIgnoreString)"
-    declare cmdWrap=""
+    declare cmdWrap="${ionice_cmd}"
     declare -i last_good=0
 
     # Used by the bash time command.
     TIMEFORMAT=$'\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS'
 
-    [ "${verbose}" -ne 0 ] && cmdWrap="time"
+    [ "${verbose}" -ne 0 ] && cmdWrap="time ${cmdWrap}"
     printSrcDst "${rmtHostName}:${rmtPathName}" "${local_backup_dir}.0"
     touch "${local_backup_dir}.0.incomplete"
     last_good="$(findLastGoodBackup "${local_path}" "${backup_name}")"
@@ -294,7 +295,7 @@ function syncFiles()
     declare -r rmtPathName="$(echo ${source_path} | cut -d ':' -f 2)"
     declare snapshotNum
     declare -i rsyncFail=0
-    declare cmdWrap=""
+    declare cmdWrap="${ionice_cmd}"
     declare -i current_snapshots=0
     declare -i max_snapshot_num=0
 
@@ -367,12 +368,12 @@ function syncFiles()
         printSrcDst "${local_path}/${backupNameDefault}.${last_good}" \
             "${local_path}/${backup_name}.0"
         touch "${local_path}/${backup_name}.0.incomplete"
-        [ "${verbose}" -ne 0 ] && cmdWrap="time"
+        [ "${verbose}" -ne 0 ] && cmdWrap="time ${cmdWrap}"
 
         eval ${cmdWrap} cp -al \
             "${local_path}/${backupNameDefault}.${last_good}" \
             "${local_path}/${backup_name}.0" && \
-            rm -f "${local_path}/${backup_name}.0.incomplete" || \
+            ${cmdWrap} rm -f "${local_path}/${backup_name}.0.incomplete" || \
             printWarning \
                 "Problem detected creating backup '${backup_name}.0'."
 
