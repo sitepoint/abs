@@ -22,12 +22,17 @@
 ## Variables
 #
 
-declare -ri verbose=0
+declare -r ionice_cmd="ionice -c 2 -n 7"
 declare -r hostName="${1}"
 declare -r srcPath="${2}"
 declare -r dstPath="${3}"
 declare -r lockFile="/var/run/backups.pid"
 declare -r bwLimit="0"
+
+# There should be no reason to touch anything below this line.
+declare -r scriptName="$(basename ${0})"
+declare -ri verbose=0
+
 
 
 ## Functions
@@ -99,12 +104,12 @@ function rsyncCmd()
     }
 
     declare -i rsyncFail=0
-    declare cmdWrap=""
+    declare cmdWrap="${ionice_cmd}"
 
     # Used by the bash time command.
     TIMEFORMAT=$'\nreal\t%3lR\nuser\t%3lU\nsys\t%3lS'
 
-    [ "${verbose}" -ne 0 ] && cmdWrap="time"
+    [ "${verbose}" -ne 0 ] && cmdWrap="time ${cmdWrap}"
 
     # We use eval so the bash (semi-)builtin command takes precedence
     # when the time package/comamnd is installed.
