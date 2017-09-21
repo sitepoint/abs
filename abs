@@ -25,7 +25,7 @@
 declare -r backupNameDefault="daily"
 declare -r backupCfg="/usr/local/etc/abs/abs.conf"
 declare -r excludeCfg="/usr/local/etc/abs/exclude.conf"
-declare -r lockFile="/var/run/backups.pid"
+declare -r lockFile="/var/run/abs.pid"
 declare -r bwLimit="0"
 declare -r ionice_cmd="ionice -c 2 -n 6"
 
