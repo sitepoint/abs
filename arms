@@ -26,7 +26,7 @@ declare -r ionice_cmd="ionice -c 2 -n 7"
 declare -r hostName="${1}"
 declare -r srcPath="${2}"
 declare -r dstPath="${3}"
-declare -r lockFile="/var/run/backups.pid"
+declare -r lockFile="/var/run/arms.pid"
 declare -r bwLimit="0"
 
 # There should be no reason to touch anything below this line.
@@ -68,8 +68,7 @@ function printError()
     echo "Error: ${@}" 1>&2
 }
 
-# If a lock file exists, wait until it is removed.
-function waitIfLocked()
+function setLockFile()
 {
     declare cmdAtPID
 
@@ -84,12 +83,19 @@ function waitIfLocked()
             # Wait 10 minutes and try again.
             echo "Sleeping, waiting for the lock to free up."
             sleep 600
-            waitIfLocked
+            setLockFile
         else
-            # Old lock file. Nuke it.
-            rm -f "${lockFile}"
+            # Old lock file. Overwrite it.
+            echo ${$} > "${lockFile}"
         fi
+    else
+        echo ${$} > "${lockFile}"
     fi
+}
+
+function delLockFile()
+{
+    rm -f "${lockFile}"
 }
 
 function rsyncCmd()
@@ -134,7 +140,8 @@ function rsyncCmd()
 #
 
 doSafetyChecks
-waitIfLocked
+setLockFile
 rsyncCmd
+delLockFile
 
 # EOF
