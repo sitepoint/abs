@@ -262,8 +262,6 @@ function rsyncCmd()
     touch "${local_backup_dir}.0.incomplete"
     last_good="$(findLastGoodBackup "${local_path}" "${backup_name}")"
 
-    # We use eval so the bash (semi-)builtin command takes precedence
-    # when the time package/comamnd is installed.
     eval ${cmdWrap} rsync -a -e \'ssh -q\' --delete \
         $([ -n "${bwLimit}" ] && echo --bwlimit=${bwLimit}) \
         $([ "${rmtPathName}" = "/" ] && echo ${rsyncExclude}) \
@@ -373,7 +371,8 @@ function syncFiles()
         eval ${cmdWrap} cp -al \
             "${local_path}/${backupNameDefault}.${last_good}" \
             "${local_path}/${backup_name}.0" && \
-            ${cmdWrap} rm -f "${local_path}/${backup_name}.0.incomplete" || \
+            eval ${cmdWrap} rm -f \
+                "${local_path}/${backup_name}.0.incomplete" || \
             printWarning \
                 "Problem detected creating backup '${backup_name}.0'."
 
